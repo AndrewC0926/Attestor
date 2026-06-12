@@ -1,0 +1,37 @@
+{
+  "framework": "ISO/IEC 42001:2023",
+  "annex": "Annex A",
+  "note": "Control identifiers reference ISO/IEC 42001:2023 Annex A. Titles are paraphrased for operator readability; the authoritative wording is in the published standard. This file is the single source of truth for control mappings so additional frameworks (NIST AI RMF, EU AI Act, AIUC-1) can be added without code changes.",
+  "controls": {
+    "A.5.5": {
+      "title": "AI system impact assessment",
+      "clause": "Annex A.5.5",
+      "summary": "Assess potential consequences of the AI system to individuals and groups."
+    },
+    "A.6.2.4": {
+      "title": "AI system operation and monitoring",
+      "clause": "Annex A.6.2.4",
+      "summary": "Define and monitor the operation of the AI system once deployed."
+    },
+    "A.6.2.8": {
+      "title": "Recording of event logs",
+      "clause": "Annex A.6.2.8",
+      "summary": "Record events arising during AI system operation to support traceability."
+    },
+    "A.9.2": {
+      "title": "Processes for responsible use of AI systems",
+      "clause": "Annex A.9.2",
+      "summary": "Establish processes for the responsible use of the AI system."
+    },
+    "A.9.4": {
+      "title": "Intended use of the AI system",
+      "clause": "Annex A.9.4",
+      "summary": "Operate the AI system in accordance with its intended use and constraints."
+    },
+    "A.10.4": {
+      "title": "Suppliers and third-party services",
+      "clause": "Annex A.10.4",
+      "summary": "Govern interactions with external parties and third-party services."
+    }
+  }
+}

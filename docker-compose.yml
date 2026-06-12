@@ -1,0 +1,52 @@
+# Attestor Phase 1 — single-command deployment.
+#
+#   docker compose up --build
+#
+# Brings up Postgres (the append-only evidence store) and the Attestor gateway
+# serving MCP over Streamable HTTP on :8080. By default the gateway fronts the
+# bundled sample tool server; point it at your own MCP server by replacing the
+# ATTESTOR_DOWNSTREAM_* variables (see the gateway service below).
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: attestor
+      POSTGRES_PASSWORD: attestor
+      POSTGRES_DB: attestor
+    volumes:
+      - attestor-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U attestor -d attestor']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gateway:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Evidence store (Postgres; append-only enforced by DB triggers).
+      ATTESTOR_DATABASE_URL: postgres://attestor:attestor@postgres:5432/attestor
+      ATTESTOR_AGENT_ID: demo-agent
+      ATTESTOR_CHECKPOINT_INTERVAL: '100'
+      # Serve MCP over Streamable HTTP.
+      ATTESTOR_HTTP_PORT: '8080'
+      ATTESTOR_HTTP_HOST: '0.0.0.0'
+      # Downstream MCP server the gateway fronts. Default: bundled sample tools.
+      # Replace with your own server, e.g.:
+      #   ATTESTOR_DOWNSTREAM_URL: https://your-mcp-server.internal/mcp
+      ATTESTOR_DOWNSTREAM_CMD: node
+      ATTESTOR_DOWNSTREAM_ARGS: /app/packages/gateway/dist/bin/sample-tools.js
+    volumes:
+      # Persist the Ed25519 signing key and offline buffer across restarts so
+      # historical checkpoints remain verifiable.
+      - attestor-keys:/data
+    ports:
+      - '8080:8080'
+
+volumes:
+  attestor-pgdata:
+  attestor-keys:

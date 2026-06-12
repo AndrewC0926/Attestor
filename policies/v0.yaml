@@ -1,0 +1,82 @@
+# Attestor policy set v0 (Phase 1).
+#
+# Declarative, data-only policy. A thin engine evaluates these rules in order;
+# the FIRST rule whose actionType and namePattern match wins. This is the same
+# interface a real policy engine (OPA / Cedar) will sit behind in Phase 2 — the
+# gateway never hard-codes decisions, it only evaluates this data.
+#
+# Risk tiers:
+#   T0 - read-only, non-sensitive (metadata, capability discovery)
+#   T1 - read-only, sensitive (reads operator data)
+#   T2 - state-changing within operator-owned systems
+#   T3 - financial, destructive, or external-communication
+#
+# `capture` defaults to `digest` (privacy by design: only SHA-256 hashes are
+# stored). A rule may opt into `full` to retain raw payloads for forensics.
+# `controls` reference ISO/IEC 42001:2023 Annex A ids (see data/iso42001-controls.json).
+
+version: 0
+description: "Attestor hardcoded policy set v0 — risk-tiered MCP tool-call classification."
+
+defaultRule:
+  id: rule.default.unknown
+  riskTier: T2
+  decision: escalate
+  capture: digest
+  controls: [A.6.2.4, A.9.2]
+  reason: "Unclassified tool call; escalate for human review (conservative default)."
+
+rules:
+  - id: rule.read.t0
+    actionType: tool_call
+    namePattern: "^(tools/list|.*\\.(list|capabilities|ping|status))$"
+    riskTier: T0
+    decision: allow
+    capture: digest
+    controls: [A.6.2.4]
+    reason: "Non-sensitive read-only metadata access."
+
+  - id: rule.read.t1
+    actionType: tool_call
+    namePattern: "^.*\\.(read|get|search|query|fetch)$"
+    riskTier: T1
+    decision: allow
+    capture: digest
+    controls: [A.6.2.4, A.6.2.8]
+    reason: "Read-only access to operator-owned data."
+
+  - id: rule.financial.t3.deny
+    actionType: tool_call
+    namePattern: "^(payments\\.(transfer|payout)|funds\\.move|.*\\.wire)$"
+    riskTier: T3
+    decision: deny
+    capture: full
+    controls: [A.9.2, A.5.5]
+    reason: "Financial transfer blocked by policy v0 (no allowlist exists in Phase 1)."
+
+  - id: rule.destructive.t3.deny
+    actionType: tool_call
+    namePattern: "^.*\\.(delete|destroy|drop|purge|terminate)$"
+    riskTier: T3
+    decision: deny
+    capture: digest
+    controls: [A.9.2, A.6.2.8]
+    reason: "Destructive action blocked by policy v0."
+
+  - id: rule.external.t3.escalate
+    actionType: tool_call
+    namePattern: "^(email\\.send|sms\\.send|slack\\.post|.*\\.notify)$"
+    riskTier: T3
+    decision: escalate
+    capture: digest
+    controls: [A.9.2, A.10.4]
+    reason: "External communication requires human approval before proceeding."
+
+  - id: rule.write.t2
+    actionType: tool_call
+    namePattern: "^.*\\.(write|create|update|put|set|append|insert)$"
+    riskTier: T2
+    decision: allow
+    capture: digest
+    controls: [A.6.2.8, A.9.4]
+    reason: "State-changing action within operator-owned systems."

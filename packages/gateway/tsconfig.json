@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    // The MCP SDK's Transport types declare optional members as `T | undefined`
+    // rather than truly-optional, which clashes with exactOptionalPropertyTypes
+    // at the SDK integration boundary. Scope that one flag off here only; all
+    // other strict checks remain on, and the rest of the monorepo keeps it.
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/**/*.ts"],
+  "references": [{ "path": "../types" }, { "path": "../spine" }]
+}

@@ -22,6 +22,10 @@ export default [
     },
     rules: {
       ...tseslint.configs.recommended.rules,
+      // TypeScript already resolves identifiers (Buffer, NodeJS, etc.) against
+      // @types/node, so the core no-undef rule is redundant and false-positives
+      // on ambient globals. This is typescript-eslint's recommended setting.
+      'no-undef': 'off',
       // The evidence spine must never leak raw payloads via console; ban stray logging.
       'no-console': 'error',
       '@typescript-eslint/no-explicit-any': 'error',
