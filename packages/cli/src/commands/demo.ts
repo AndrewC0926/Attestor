@@ -9,13 +9,13 @@ import {
   PolicyV0Engine,
   SpineEvidenceSink,
   buildAuditedServer,
+  createSampleToolServer,
 } from '@attestor/gateway';
 import type { CliConfig } from '../config.js';
 import { loadControlCatalog } from '../controls.js';
 import { buildReport } from '../report/build.js';
 import { renderMarkdown } from '../report/markdown.js';
 import { renderJson } from '../report/json.js';
-import { createMockDownstream } from '../demo/mock-downstream.js';
 
 const DEMO_DIR = '.attestor/demo';
 const AGENT_ID = 'demo-agent';
@@ -67,7 +67,7 @@ export async function runDemo(config: CliConfig): Promise<number> {
   const [agentSide, gatewaySide] = InMemoryTransport.createLinkedPair();
   const [downClientSide, mockSide] = InMemoryTransport.createLinkedPair();
 
-  const mock = createMockDownstream();
+  const mock = createSampleToolServer();
   await mock.connect(mockSide);
   const downstreamClient = new Client({ name: 'demo-downstream', version: '0.1.0' });
   await downstreamClient.connect(downClientSide);

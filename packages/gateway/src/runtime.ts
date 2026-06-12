@@ -51,14 +51,20 @@ export async function startGateway(config: GatewayConfig): Promise<GatewayHandle
   );
 
   const downstream = await connectDownstream(config.downstream);
-  const server = buildAuditedServer(core, downstream, { agentId: config.agentId });
 
+  // An MCP Server binds to a single transport, so we build one audited server
+  // per enabled transport; they share the same audit core and downstream client.
   const stoppers: Array<() => Promise<void>> = [];
   if (config.transports.stdio) {
+    const server = buildAuditedServer(core, downstream, { agentId: config.agentId });
     await serveStdio(server);
+    stoppers.push(() => server.close());
   }
   if (config.transports.http) {
-    stoppers.push(await serveHttp(server, config.transports.http));
+    const server = buildAuditedServer(core, downstream, { agentId: config.agentId });
+    const stopHttp = await serveHttp(server, config.transports.http);
+    stoppers.push(stopHttp);
+    stoppers.push(() => server.close());
   }
 
   return {
@@ -69,7 +75,6 @@ export async function startGateway(config: GatewayConfig): Promise<GatewayHandle
         await stopFn();
       }
       await downstream.close();
-      await server.close();
       await spine.close();
     },
   };

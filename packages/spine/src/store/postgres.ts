@@ -59,6 +59,12 @@ DROP TRIGGER IF EXISTS evidence_checkpoint_append_only ON evidence_checkpoint;
 CREATE TRIGGER evidence_checkpoint_append_only
   BEFORE UPDATE OR DELETE ON evidence_checkpoint
   FOR EACH ROW EXECUTE FUNCTION attestor_block_mutation();
+
+-- Defense in depth: strip UPDATE/DELETE from PUBLIC. The trigger above is the
+-- primary, owner-binding guarantee; for least-privilege deployments, connect as
+-- a non-owner role granted only SELECT and INSERT (see deploy/postgres-grants.sql).
+REVOKE UPDATE, DELETE ON evidence_record FROM PUBLIC;
+REVOKE UPDATE, DELETE ON evidence_checkpoint FROM PUBLIC;
 `;
 
 /** Advisory lock key that serializes appends to the single chain. */

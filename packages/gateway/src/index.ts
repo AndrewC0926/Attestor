@@ -35,3 +35,4 @@ export {
   type GatewayConfig,
   type GatewayHandle,
 } from './runtime.js';
+export { createSampleToolServer, SAMPLE_TOOLS } from './sample-tools.js';

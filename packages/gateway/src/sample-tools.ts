@@ -4,8 +4,8 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-/** The tools the demo's downstream MCP server exposes. */
-export const DEMO_TOOLS = [
+/** Sample tool names spanning every risk tier, for the demo and Compose image. */
+export const SAMPLE_TOOLS = [
   'fs.read',
   'db.query',
   'service.status',
@@ -19,21 +19,21 @@ export const DEMO_TOOLS = [
 ] as const;
 
 /**
- * A minimal in-process MCP server standing in for the customer's real tool
- * servers. It returns canned results; the point of the demo is the gateway's
- * audit behaviour around it, not the tools themselves.
+ * A minimal in-process MCP server standing in for a customer's real tool
+ * servers. It returns canned results so the gateway's audit behaviour can be
+ * exercised without external dependencies.
  */
-export function createMockDownstream(): Server {
+export function createSampleToolServer(): Server {
   const server = new Server(
-    { name: 'demo-tools', version: '0.1.0' },
+    { name: 'attestor-sample-tools', version: '0.1.0' },
     { capabilities: { tools: {} } },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, () =>
     Promise.resolve({
-      tools: DEMO_TOOLS.map((name) => ({
+      tools: SAMPLE_TOOLS.map((name) => ({
         name,
-        description: `Demo tool ${name}`,
+        description: `Sample tool ${name}`,
         inputSchema: { type: 'object' as const },
       })),
     }),
@@ -41,7 +41,9 @@ export function createMockDownstream(): Server {
 
   server.setRequestHandler(CallToolRequestSchema, (request) =>
     Promise.resolve({
-      content: [{ type: 'text' as const, text: `downstream executed ${request.params.name}` }],
+      content: [
+        { type: 'text' as const, text: `executed ${request.params.name}` },
+      ],
     }),
   );
 
