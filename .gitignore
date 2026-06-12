@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.local
+*.log
+
+# Local demo + key material — never commit generated key material.
+.attestor/
+*.sqlite
+*.sqlite-journal
+keys/
+!keys/.gitkeep
