@@ -1,0 +1,20 @@
+{
+  "name": "@attestor/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "attestor": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@attestor/gateway": "0.1.0",
+    "@attestor/spine": "0.1.0",
+    "@attestor/types": "0.1.0",
+    "@modelcontextprotocol/sdk": "^1.13.0"
+  }
+}
