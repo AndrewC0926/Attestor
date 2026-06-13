@@ -52,4 +52,17 @@ describe('RFC 3161 request/token round-trip (offline test TSA)', () => {
     const result = await verifyTimeStampToken(token, digest, [otherTsa.certPem]);
     expect(result.ok).toBe(false);
   });
+
+  it('verifies a SHA-512 token (the digest a real TSA like freetsa.org uses)', async () => {
+    // Regression: verifyTimeStampToken must derive the hash from the token's
+    // declared digestAlgorithm, not assume SHA-256.
+    const tsa = await createTestTsa({ hash: 'SHA-512' });
+    const digest = sha256(Buffer.from('checkpoint-root-512'));
+    const token = await tsa.sign(digest, new Date('2026-06-13T12:00:00.000Z'));
+
+    const result = await verifyTimeStampToken(token, digest, [tsa.certPem]);
+    expect(result.failures).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.genTime).toBe('2026-06-13T12:00:00.000Z');
+  });
 });
