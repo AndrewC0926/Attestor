@@ -14,8 +14,11 @@ Usage:
   attestor attest [--from <iso>] [--to <iso>] [--out <prefix>]
                                          Compile a compliance report (Markdown + JSON)
   attestor demo                          Run the end-to-end demo scenario
-  attestor showcase [--replay]           Run the support-desk governance showcase
-                                         (--replay reconstructs it from evidence)
+  attestor showcase [--scenario <id>] [--replay] [--prove-tamper]
+                                         Run a governance showcase. Scenarios:
+                                         support-desk (default), finance.
+                                         --replay reconstructs from the evidence;
+                                         --prove-tamper runs the live tamper proof.
   attestor help                          Show this help
 
 Environment:
@@ -59,9 +62,17 @@ async function main(): Promise<number> {
     case 'showcase': {
       const { values } = parseArgs({
         args: rest,
-        options: { replay: { type: 'boolean' } },
+        options: {
+          scenario: { type: 'string' },
+          replay: { type: 'boolean' },
+          'prove-tamper': { type: 'boolean' },
+        },
       });
-      return runShowcase(config, values.replay ? { replay: true } : {});
+      return runShowcase(config, {
+        ...(values.scenario ? { scenario: values.scenario } : {}),
+        ...(values.replay ? { replay: true } : {}),
+        ...(values['prove-tamper'] ? { proveTamper: true } : {}),
+      });
     }
     case 'help':
     case undefined:

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { EvidenceRecord } from '@attestor/types';
 import { createShowcaseHarness } from '../src/harness.js';
+import { supportDeskScenario } from '../src/scenarios/support-desk.js';
 import { SHOWCASE_STEPS } from '../src/scenario.js';
 import { projectReplay } from '../src/replay.js';
 
@@ -23,7 +24,7 @@ describe('showcase end-to-end through the real gateway + spine', () => {
   });
 
   async function run(): Promise<EvidenceRecord[]> {
-    const harness = await createShowcaseHarness(dir);
+    const harness = await createShowcaseHarness(supportDeskScenario, dir);
     try {
       for (const step of SHOWCASE_STEPS) {
         try {
@@ -72,7 +73,7 @@ describe('showcase end-to-end through the real gateway + spine', () => {
   });
 
   it('passes full integrity verification (chain + signed checkpoints)', async () => {
-    const harness = await createShowcaseHarness(dir);
+    const harness = await createShowcaseHarness(supportDeskScenario, dir);
     try {
       for (const step of SHOWCASE_STEPS) {
         try {

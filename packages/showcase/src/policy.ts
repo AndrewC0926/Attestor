@@ -1,5 +1,5 @@
-import { PolicyV0Engine } from '@attestor/gateway';
 import type { PolicyEngine, PolicyInput, PolicyResult } from '@attestor/gateway';
+import { createAmountAwarePolicyEngine } from './amount-policy.js';
 
 /**
  * Showcase policy: an ADDITIVE policy engine layered on the existing
@@ -10,7 +10,8 @@ import type { PolicyEngine, PolicyInput, PolicyResult } from '@attestor/gateway'
  * adds the one thing v0 cannot express — an *argument-aware* rule: a refund is
  * auto-approved up to the limit and escalated above it. This demonstrates the
  * `PolicyEngine` extension point (a real OPA/Cedar engine would slot in the
- * same way) without touching core logic.
+ * same way) without touching core logic. The threshold itself is the shared
+ * `createAmountAwarePolicyEngine` helper, reused by the finance scenario.
  */
 
 /** Refunds at or below this dollar amount are auto-approved; above it, escalate. */
@@ -97,58 +98,21 @@ const SHOWCASE_POLICY_DOC = {
   ],
 };
 
-/** Extract a finite numeric `amount` from canonical args JSON, or null. */
-function readRefundAmount(argumentsJson: string): number | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(argumentsJson);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== 'object' || parsed === null) {
-    return null;
-  }
-  const amount = (parsed as Record<string, unknown>)['amount'];
-  return typeof amount === 'number' && Number.isFinite(amount) ? amount : null;
-}
-
 /**
  * Argument-aware policy engine for the support desk. Delegates tier/decision to
- * the name-pattern base, then refines the refund decision by amount.
+ * the name-pattern base, then refines the refund decision by amount via the
+ * shared threshold helper.
  */
 export class SupportDeskPolicyEngine implements PolicyEngine {
   readonly name = 'support-desk-policy-v0';
 
-  private readonly base: PolicyV0Engine;
+  private readonly engine = createAmountAwarePolicyEngine(this.name, SHOWCASE_POLICY_DOC, {
+    tool: REFUND_TOOL,
+    limit: REFUND_AUTO_APPROVE_LIMIT,
+    noun: 'Refund',
+  });
 
-  constructor() {
-    this.base = PolicyV0Engine.fromDocument(SHOWCASE_POLICY_DOC);
-  }
-
-  async evaluate(input: PolicyInput): Promise<PolicyResult> {
-    const base = await this.base.evaluate(input);
-    if (input.actionName !== REFUND_TOOL) {
-      return base;
-    }
-    const amount = readRefundAmount(input.argumentsJson);
-    if (amount === null) {
-      return {
-        ...base,
-        decision: 'escalate',
-        reason: 'Refund amount missing or invalid; escalating for human review.',
-      };
-    }
-    if (amount > REFUND_AUTO_APPROVE_LIMIT) {
-      return {
-        ...base,
-        decision: 'escalate',
-        reason: `Refund of $${amount} exceeds the $${REFUND_AUTO_APPROVE_LIMIT} auto-approval limit; escalating for human approval.`,
-      };
-    }
-    return {
-      ...base,
-      decision: 'allow',
-      reason: `Refund of $${amount} is within the $${REFUND_AUTO_APPROVE_LIMIT} auto-approval limit.`,
-    };
+  evaluate(input: PolicyInput): Promise<PolicyResult> {
+    return this.engine.evaluate(input);
   }
 }
