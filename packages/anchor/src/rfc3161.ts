@@ -154,16 +154,102 @@ function resolveSignerHash(signerInfo: pkijs.SignerInfo): HashNames | null {
   return DIGEST_ALGORITHMS[signerInfo.digestAlgorithm.algorithmId] ?? null;
 }
 
+const OID_RSA = '1.2.840.113549.1.1.1';
+const OID_EC_PUBLIC_KEY = '1.2.840.10045.2.1';
+const EC_CURVES: Readonly<Record<string, { name: string; size: number }>> = {
+  '1.2.840.10045.3.1.7': { name: 'P-256', size: 32 },
+  '1.3.132.0.34': { name: 'P-384', size: 48 },
+  '1.3.132.0.35': { name: 'P-521', size: 66 },
+};
+
+interface IntegerBlock {
+  readonly valueBlock: { readonly valueHexView: Uint8Array };
+}
+
+/** Convert a DER ECDSA signature (SEQUENCE { r, s }) to WebCrypto raw r||s. */
+function derEcdsaToRaw(der: Buffer, size: number): Buffer {
+  const seq = asn1js.fromBER(toArrayBuffer(der)).result as unknown as {
+    valueBlock: { value: IntegerBlock[] };
+  };
+  const fixed = (int: IntegerBlock): Buffer => {
+    let b = Buffer.from(int.valueBlock.valueHexView);
+    let i = 0;
+    while (i < b.length - 1 && b[i] === 0) {
+      i++;
+    }
+    b = b.subarray(i);
+    const out = Buffer.alloc(size);
+    b.copy(out, Math.max(0, size - b.length));
+    return out;
+  };
+  const parts = seq.valueBlock.value;
+  return Buffer.concat([fixed(parts[0] as IntegerBlock), fixed(parts[1] as IntegerBlock)]);
+}
+
+interface KeyScheme {
+  readonly importAlgorithm: RsaHashedImportParams | EcKeyImportParams;
+  readonly verifyAlgorithm: AlgorithmIdentifier | EcdsaParams;
+  /** EC coordinate size when ECDSA (signature needs DER→raw); null for RSA. */
+  readonly ecSize: number | null;
+}
+
+/** Derive WebCrypto import/verify parameters from the signer cert and hash. */
+function keyScheme(signerCert: pkijs.Certificate, webcryptoHash: string): KeyScheme | null {
+  const oid = signerCert.subjectPublicKeyInfo.algorithm.algorithmId;
+  if (oid === OID_RSA) {
+    return {
+      importAlgorithm: { name: 'RSASSA-PKCS1-v1_5', hash: webcryptoHash },
+      verifyAlgorithm: { name: 'RSASSA-PKCS1-v1_5' },
+      ecSize: null,
+    };
+  }
+  if (oid === OID_EC_PUBLIC_KEY) {
+    const params = signerCert.subjectPublicKeyInfo.algorithm.algorithmParams;
+    const curveOid = params instanceof asn1js.ObjectIdentifier ? params.valueBlock.toString() : '';
+    const curve = EC_CURVES[curveOid];
+    if (!curve) {
+      return null;
+    }
+    return {
+      importAlgorithm: { name: 'ECDSA', namedCurve: curve.name },
+      verifyAlgorithm: { name: 'ECDSA', hash: webcryptoHash },
+      ecSize: curve.size,
+    };
+  }
+  return null;
+}
+
+/** Select the certificate that actually signed the token (by issuer+serial). */
+function findSignerCert(
+  signedData: pkijs.SignedData,
+  signerInfo: pkijs.SignerInfo,
+): pkijs.Certificate | undefined {
+  const certs = (signedData.certificates ?? []).filter(
+    (c): c is pkijs.Certificate => c instanceof pkijs.Certificate,
+  );
+  const sid = signerInfo.sid;
+  if (sid instanceof pkijs.IssuerAndSerialNumber) {
+    const wanted = Buffer.from(sid.serialNumber.valueBlock.valueHexView).toString('hex');
+    const match = certs.find(
+      (c) => Buffer.from(c.serialNumber.valueBlock.valueHexView).toString('hex') === wanted,
+    );
+    if (match) {
+      return match;
+    }
+  }
+  return certs[0];
+}
+
 /**
  * Verify the SignerInfo signature with WebCrypto. pkijs/asn1js do all the ASN.1;
- * the signature math is the platform's vetted RSASSA-PKCS1-v1.5 with the digest
- * the TSA actually declared (NOT a hardcoded SHA-256). When signed attributes
- * are present (as real TSAs and our test TSA emit), the signed value is the DER
- * of the SignedAttributes re-tagged as an explicit SET OF (RFC 5652 §5.4);
- * otherwise it is the eContent octets.
+ * the signature math is the platform's vetted RSASSA-PKCS1-v1.5 or ECDSA — both
+ * the digest AND the key type are derived from the token (real TSAs differ:
+ * freetsa.org signs ECDSA-P-384 / SHA-512). When signed attributes are present
+ * (as real TSAs and our test TSA emit), the signed value is the DER of the
+ * SignedAttributes re-tagged as an explicit SET OF (RFC 5652 §5.4); otherwise it
+ * is the eContent octets.
  */
 async function verifySignerSignature(
-  signedData: pkijs.SignedData,
   signerInfo: pkijs.SignerInfo,
   signerCert: pkijs.Certificate,
   eContentBytes: Buffer,
@@ -191,17 +277,24 @@ async function verifySignerSignature(
     signedBytes = eContentBytes;
   }
 
+  const scheme = keyScheme(signerCert, hash.webcrypto);
+  if (!scheme) {
+    return {
+      ok: false,
+      detail: `unsupported signing key algorithm ${signerCert.subjectPublicKeyInfo.algorithm.algorithmId}`,
+    };
+  }
+
   const spki = signerCert.subjectPublicKeyInfo.toSchema().toBER(false);
-  const key = await nodeCrypto().subtle.importKey(
-    'spki',
-    spki,
-    { name: 'RSASSA-PKCS1-v1_5', hash: hash.webcrypto },
-    false,
-    ['verify'],
-  );
-  const signature = Buffer.from(signerInfo.signature.valueBlock.valueHexView);
+  const key = await nodeCrypto().subtle.importKey('spki', spki, scheme.importAlgorithm, false, [
+    'verify',
+  ]);
+  let signature: Buffer = Buffer.from(signerInfo.signature.valueBlock.valueHexView);
+  if (scheme.ecSize !== null) {
+    signature = derEcdsaToRaw(signature, scheme.ecSize);
+  }
   const ok = await nodeCrypto().subtle.verify(
-    { name: 'RSASSA-PKCS1-v1_5' },
+    scheme.verifyAlgorithm,
     key,
     toArrayBuffer(signature),
     toArrayBuffer(signedBytes),
@@ -257,9 +350,7 @@ export async function verifyTimeStampToken(
   }
 
   const signerInfo = signedData.signerInfos?.[0];
-  const signerCert = signedData.certificates?.find(
-    (c): c is pkijs.Certificate => c instanceof pkijs.Certificate,
-  );
+  const signerCert = signerInfo ? findSignerCert(signedData, signerInfo) : undefined;
   const tsaSubject = signerCert ? certCommonName(signerCert) : null;
 
   if (!signerInfo || !signerCert) {
@@ -272,7 +363,7 @@ export async function verifyTimeStampToken(
   }
 
   try {
-    const sig = await verifySignerSignature(signedData, signerInfo, signerCert, eContentBytes);
+    const sig = await verifySignerSignature(signerInfo, signerCert, eContentBytes);
     if (!sig.ok) {
       failures.push(sig.detail ?? 'CMS signature did not verify against the TSA certificate');
     }
