@@ -5,20 +5,27 @@ import { runVerify } from './commands/verify.js';
 import { runAttest, type AttestArgs } from './commands/attest.js';
 import { runDemo } from './commands/demo.js';
 import { runShowcase } from './commands/showcase.js';
+import { runVerifyAnchored } from './commands/verify-anchored.js';
 
 const HELP = `attestor — audit gateway evidence CLI
 
 Usage:
   attestor verify [--seq <n>]            Prove the evidence log is intact
                                          (--seq verifies one record in O(log n))
+  attestor verify-anchored --bundle <path> [--seq <n>]
+                                         Independently verify an exported bundle:
+                                         chain integrity + RFC 3161 TSA anchor +
+                                         Merkle inclusion (no live DB, no operator trust)
   attestor attest [--from <iso>] [--to <iso>] [--out <prefix>]
                                          Compile a compliance report (Markdown + JSON)
   attestor demo                          Run the end-to-end demo scenario
-  attestor showcase [--scenario <id>] [--replay] [--prove-tamper]
+  attestor showcase [--scenario <id>] [--replay] [--prove-tamper] [--anchor]
                                          Run a governance showcase. Scenarios:
                                          support-desk (default), finance.
                                          --replay reconstructs from the evidence;
-                                         --prove-tamper runs the live tamper proof.
+                                         --prove-tamper runs the live tamper proof;
+                                         --anchor anchors to an RFC 3161 TSA and
+                                         verifies an exported bundle.
   attestor help                          Show this help
 
 Environment:
@@ -59,6 +66,21 @@ async function main(): Promise<number> {
     }
     case 'demo':
       return runDemo(config);
+    case 'verify-anchored': {
+      const { values } = parseArgs({
+        args: rest,
+        options: { bundle: { type: 'string' }, seq: { type: 'string' } },
+      });
+      if (!values.bundle) {
+        console.error('verify-anchored requires --bundle <path>\n');
+        console.log(HELP);
+        return 1;
+      }
+      return runVerifyAnchored({
+        bundle: values.bundle,
+        ...(values.seq !== undefined ? { seq: Number(values.seq) } : {}),
+      });
+    }
     case 'showcase': {
       const { values } = parseArgs({
         args: rest,
@@ -66,12 +88,14 @@ async function main(): Promise<number> {
           scenario: { type: 'string' },
           replay: { type: 'boolean' },
           'prove-tamper': { type: 'boolean' },
+          anchor: { type: 'boolean' },
         },
       });
       return runShowcase(config, {
         ...(values.scenario ? { scenario: values.scenario } : {}),
         ...(values.replay ? { replay: true } : {}),
         ...(values['prove-tamper'] ? { proveTamper: true } : {}),
+        ...(values.anchor ? { anchor: true } : {}),
       });
     }
     case 'help':

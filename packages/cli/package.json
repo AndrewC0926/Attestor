@@ -12,6 +12,7 @@
     "build": "tsc --build"
   },
   "dependencies": {
+    "@attestor/anchor": "0.1.0",
     "@attestor/gateway": "0.1.0",
     "@attestor/showcase": "0.1.0",
     "@attestor/spine": "0.1.0",
