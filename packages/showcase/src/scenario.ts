@@ -3,14 +3,9 @@
  * The CLI command drives these steps through the gateway and prints the live
  * governance decisions.
  */
+import type { ShowcaseStep } from './scenarios/types.js';
 
-/** A single action the agent attempts during the scenario. */
-export interface ShowcaseStep {
-  readonly tool: string;
-  readonly arguments: Record<string, unknown>;
-  /** One-line, human-readable description of what the agent is doing. */
-  readonly narrative: string;
-}
+export type { ShowcaseStep } from './scenarios/types.js';
 
 /** The (simulated) ticket the agent is working. */
 export const SHOWCASE_TICKET = {

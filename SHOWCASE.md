@@ -1,55 +1,68 @@
-# Attestor Showcase — the support-desk agent
+# Attestor Showcase — governance you can watch
 
-A purpose-built demo that makes Attestor's governance **visible**: a single MCP
-agent (`support-desk-agent`) handles a realistic support ticket through the
-*existing* Attestor gateway and spine, and you watch **allow / escalate / deny**
-happen live — then replay the whole thing from the signed evidence and prove it
-is tamper-evident.
+Purpose-built demos that make Attestor's governance **visible**: a single MCP
+agent works a realistic task through the *existing* Attestor gateway and spine,
+and you watch **allow / escalate / deny** happen live — then replay the whole
+thing from the signed evidence and prove, on screen, that it is tamper-evident.
 
 > Everything here is **simulated**. No real CRM, no real payments, no real
-> customer data. The point is to exercise the governance path, not to do work.
-> This is an **additive demo layer** (`packages/showcase` + one `attestor`
-> subcommand); it does not modify the spine or the gateway core.
+> customer data, no real money. The point is to exercise the governance path,
+> not to do work. This is an **additive demo layer** (`packages/showcase` + one
+> `attestor` subcommand); it does not modify the spine or the gateway core.
 
-## What it demonstrates
+## Scenarios
 
-- One agent, **6 tools mapped across the risk tiers**:
+Pick a scenario with `--scenario <id>` (default `support-desk`):
 
-  | Tool | Tier | Decision |
-  |------|------|----------|
-  | `read_ticket` | T0 | allow |
-  | `post_reply` | T1 | allow |
-  | `update_customer_record` | T2 | allow |
-  | `issue_refund` | T3 | **allow ≤ $500, escalate > $500** (argument-aware) |
-  | `delete_account` | T3 | **deny** |
-  | `export_customer_data` | T3 | **deny** |
+**`support-desk`** — a customer-support agent working a disputed-charge ticket:
 
-- The `issue_refund` threshold is enforced by an additive
-  `SupportDeskPolicyEngine` that layers an *argument-aware* rule on top of the
-  product's name-pattern `PolicyV0Engine` — the same `PolicyEngine` extension
-  point a real OPA/Cedar engine would use. The product policy set is untouched.
+| Tool | Tier | Decision |
+|------|------|----------|
+| `read_ticket` | T0 | allow |
+| `post_reply` | T1 | allow |
+| `update_customer_record` | T2 | allow |
+| `issue_refund` | T3 | **allow ≤ $500, escalate > $500** (argument-aware) |
+| `delete_account` | T3 | **deny** |
+| `export_customer_data` | T3 | **deny** |
 
+**`finance`** — a treasury-ops agent running a month-end settlement:
+
+| Tool | Tier | Decision |
+|------|------|----------|
+| `check_balance` | T0 | allow |
+| `categorize_transaction` | T1 | allow |
+| `move_funds` | T3 | **allow ≤ $10,000, escalate > $10,000** (argument-aware) |
+| `wire_external` | T3 | **deny** |
+| `pull_full_ledger` | T3 | **deny** |
+
+- Each argument-aware threshold (`issue_refund`, `move_funds`) is enforced by an
+  additive policy engine built on the shared `createAmountAwarePolicyEngine`
+  helper, layered on the product's name-pattern `PolicyV0Engine` — the same
+  `PolicyEngine` extension point a real OPA/Cedar engine would use. The product
+  policy set is untouched, and the two scenarios share no mutable state.
 - Every action becomes a **signed, hash-chained evidence record** in the same
-  spine as Phase 1, written to an **isolated store** (`.attestor/showcase/`) so
-  it never collides with `attestor demo`.
+  spine as Phase 1, written to an **isolated store** (`.attestor/showcase/`,
+  reset at the start of each run) so it never collides with `attestor demo`.
 
 ## Run it
 
 ```bash
-npm run build          # first time (or after changes)
-attestor showcase
+npm run build                         # first time (or after changes)
+attestor showcase                     # support-desk (default)
+attestor showcase --scenario finance  # the finance agent
 ```
 
 You'll see each action's **tier, decision, and evidence record id** as it
-happens:
+happens (finance shown):
 
 ```
-   1. read_ticket            T0  ✅ ALLOW     → evidence #1 (70e3e5f693ec…)
-   2. update_customer_record T2  ✅ ALLOW     → evidence #2 (32cd5c8e6041…)
-   3. post_reply             T1  ✅ ALLOW     → evidence #3 (045976e5cc8d…)
-   4. issue_refund           T3  ✅ ALLOW     → evidence #4 (99ac17b7e730…)   $200 — within limit
-   5. issue_refund           T3  ⚠️  ESCALATE  → evidence #5 (e0157a1670b7…)   $750 — over limit
-   6. export_customer_data   T3  ⛔ DENY      → evidence #6 (e063ddc2aa5d…)
+   3. move_funds               T3  ✅ ALLOW     → evidence #3 (90376a853cbc…)
+      Agent moves $5,000 internally (within the auto-approval limit)
+      ↳ Transfer of $5000 is within the $10000 auto-approval limit.
+   4. move_funds               T3  ⚠️  ESCALATE  → evidence #4 (91e08cee782b…)
+      Agent attempts a $25,000 internal move (over the limit → escalates)
+      ↳ Transfer of $25000 exceeds the $10000 auto-approval limit; escalating for human approval.
+   5. wire_external            T3  ⛔ DENY      → evidence #5 (d0b7572ae257…)
 ```
 
 Denied and escalated calls are **never forwarded** to the tool server — they are
@@ -67,12 +80,38 @@ action was classified and decided, the input digest, and the record hash.
 Records whose policy opted into `capture: full` (the refunds and the export)
 also show their retained payload; everything else is digest-only by design.
 
-## Prove it is tamper-evident
+## Prove it is tamper-evident — built in
 
-The showcase reuses the Phase 1 integrity guarantee. Flip **one byte** of one
-evidence record directly in storage (out of band) and `attestor verify` detects
-it; restore the byte and it passes again. These commands are run against the
-**showcase store**:
+The fastest way: one flag runs the scenario and then the full
+tamper→detect→restore cycle on screen, with no hand-typed commands.
+
+```bash
+attestor showcase --scenario finance --prove-tamper
+```
+
+```
+— Built-in tamper proof (live, no hand-typed commands) —
+
+  1) verify on fresh evidence      : ✅ VERIFIED — 6 records, 2 signed checkpoints, chain intact.
+  2) tamper: flipped exactly 1 byte of evidence #3 (move_funds) — input_sha256 5616b312… → 4616b312…
+  3) verify after tamper           : ❌ FAILED — 1 issue(s) detected:
+        • [record_hash_mismatch] at 3: record content does not match its stored hash
+  4) restore: reverted the byte of evidence #3 (XOR is its own inverse)
+  5) verify after restore          : ✅ VERIFIED — 6 records, 2 signed checkpoints, chain intact.
+
+Tamper proof complete: detection works, and the restored log verifies again.
+```
+
+It tampers the **middle** evidence record, and every verify line is the **real
+`spine.verify()`** — the same code path as `attestor verify`. The flip and
+restore handle the append-only trigger exactly as the manual sequence below.
+
+## Prove it is tamper-evident — by hand
+
+The same thing, step by step, if you'd rather drive it yourself. Flip **one
+byte** of one evidence record directly in storage (out of band) and `attestor
+verify` detects it; restore the byte and it passes again. These commands run
+against the **showcase store**:
 
 ```bash
 export ATTESTOR_SQLITE_PATH=.attestor/showcase/evidence.sqlite
@@ -125,14 +164,19 @@ root) — exactly what `verify` re-derives independently.
 ## Where the code lives
 
 ```
-packages/showcase/                # the additive demo layer (own package)
-  src/tools.ts                    # 6 simulated support-desk MCP tools
-  src/policy.ts                   # SupportDeskPolicyEngine (argument-aware refund rule)
-  src/scenario.ts                 # the scripted ticket (data only)
-  src/harness.ts                  # wires agent ⇄ gateway ⇄ tools, isolated store
-  src/replay.ts                   # projects evidence records into a replay
-packages/cli/src/commands/showcase.ts   # the `attestor showcase` driver (prints live)
+packages/showcase/                       # the additive demo layer (own package)
+  src/amount-policy.ts                   # shared argument-aware threshold helper
+  src/tamper.ts                          # one-byte flip/restore for --prove-tamper
+  src/harness.ts                         # wires agent ⇄ gateway ⇄ tools, isolated store
+  src/replay.ts                          # projects evidence records into a replay
+  src/scenarios/types.ts                 # the Scenario interface
+  src/scenarios/index.ts                 # scenario registry (id → scenario)
+  src/scenarios/support-desk.ts          # support-desk scenario (tools/policy/steps)
+  src/scenarios/finance.ts               # finance scenario (tools/policy/steps)
+  src/tools.ts, src/policy.ts, src/scenario.ts   # support-desk tools/policy/steps
+packages/cli/src/commands/showcase.ts    # the `attestor showcase` driver (prints live)
 ```
 
 The spine (`packages/spine`) and the gateway core (`packages/gateway/src`) are
-**not modified** by this showcase.
+**not modified** by this showcase. The built-in tamper proof mutates storage in
+`src/tamper.ts` but all detection is the existing `spine.verify()`.

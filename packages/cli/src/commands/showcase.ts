@@ -1,13 +1,17 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Spine, resolveKeyPair } from '@attestor/spine';
-import type { EvidenceRecord, PolicyDecision } from '@attestor/types';
+import type { EvidenceRecord, PolicyDecision, VerificationResult } from '@attestor/types';
 import {
   createShowcaseHarness,
   projectReplay,
+  flipEvidenceByte,
+  restoreEvidenceByte,
+  getScenario,
+  SCENARIO_IDS,
+  DEFAULT_SCENARIO_ID,
   SHOWCASE_DIR,
-  SHOWCASE_STEPS,
-  SHOWCASE_TICKET,
+  type Scenario,
 } from '@attestor/showcase';
 import type { CliConfig } from '../config.js';
 import { loadControlCatalog } from '../controls.js';
@@ -16,8 +20,12 @@ import { renderMarkdown } from '../report/markdown.js';
 import { renderJson } from '../report/json.js';
 
 export interface ShowcaseArgs {
+  /** Scenario id (default: support-desk). */
+  readonly scenario?: string;
   /** When set, reconstruct the run from the existing evidence instead of running. */
   readonly replay?: boolean;
+  /** When set, run the scenario then the built-in on-screen tamper proof. */
+  readonly proveTamper?: boolean;
 }
 
 interface CallResult {
@@ -30,26 +38,44 @@ const DECISION_LABEL: Record<PolicyDecision, string> = {
   deny: '⛔ DENY    ',
 };
 
+const SQLITE_PATH = join(SHOWCASE_DIR, 'evidence.sqlite');
+const KEY_PATH = join(SHOWCASE_DIR, 'signing-key.json');
+
 function countDecision(records: readonly EvidenceRecord[], decision: PolicyDecision): number {
   return records.filter((r) => r.decision === decision).length;
 }
 
-/** `attestor showcase [--replay]` — the support-desk governance showcase. */
+/** `attestor showcase [--scenario <id>] [--replay] [--prove-tamper]`. */
 export async function runShowcase(config: CliConfig, args: ShowcaseArgs): Promise<number> {
   if (args.replay) {
     return runReplay();
   }
 
-  const harness = await createShowcaseHarness(SHOWCASE_DIR);
+  const scenarioId = args.scenario ?? DEFAULT_SCENARIO_ID;
+  const scenario = getScenario(scenarioId);
+  if (!scenario) {
+    console.error(`Unknown scenario '${scenarioId}'. Available: ${SCENARIO_IDS.join(', ')}.`);
+    return 1;
+  }
+
+  const runOk = await runScenario(config, scenario);
+  if (!args.proveTamper) {
+    return runOk ? 0 : 1;
+  }
+  const proofOk = await proveTamper();
+  return runOk && proofOk ? 0 : 1;
+}
+
+/** Drive a scenario live through the gateway, write the report, print summary. */
+async function runScenario(config: CliConfig, scenario: Scenario): Promise<boolean> {
+  const harness = await createShowcaseHarness(scenario, SHOWCASE_DIR);
   const { agent, spine } = harness;
 
-  console.log(
-    `\nAttestor showcase — "support-desk-agent" works ticket ${SHOWCASE_TICKET.id} for ${SHOWCASE_TICKET.customerName} (“${SHOWCASE_TICKET.subject}”).`,
-  );
-  console.log('Every tool is SIMULATED — no real customer data, no real money moves.');
+  console.log(`\nAttestor showcase — ${scenario.title}`);
+  console.log(scenario.intro);
   console.log('Each action below flows through the Attestor gateway and is recorded as signed evidence:\n');
 
-  for (const [i, step] of SHOWCASE_STEPS.entries()) {
+  for (const [i, step] of scenario.steps.entries()) {
     try {
       (await agent.callTool({ name: step.tool, arguments: step.arguments })) as CallResult;
     } catch {
@@ -63,7 +89,7 @@ export async function runShowcase(config: CliConfig, args: ShowcaseArgs): Promis
     }
     const label = DECISION_LABEL[record.decision];
     console.log(
-      `  ${String(i + 1).padStart(2)}. ${step.tool.padEnd(22)} ${record.riskTier}  ${label}  → evidence #${record.seq} (${record.recordHash.slice(0, 12)}…)`,
+      `  ${String(i + 1).padStart(2)}. ${step.tool.padEnd(24)} ${record.riskTier}  ${label}  → evidence #${record.seq} (${record.recordHash.slice(0, 12)}…)`,
     );
     console.log(`      ${step.narrative}`);
     console.log(`      ↳ ${record.reason}`);
@@ -91,6 +117,7 @@ export async function runShowcase(config: CliConfig, args: ShowcaseArgs): Promis
   writeFileSync(`${reportPrefix}.json`, renderJson(report), 'utf8');
 
   console.log('\n— Governance summary —');
+  console.log(`  Scenario:           ${scenario.id}`);
   console.log(`  Evidence records:   ${records.length}`);
   console.log(`  Signed checkpoints: ${checkpoints.length}`);
   console.log(
@@ -102,23 +129,82 @@ export async function runShowcase(config: CliConfig, args: ShowcaseArgs): Promis
 
   console.log('Reconstruct it from the evidence alone:');
   console.log('  attestor showcase --replay');
-  console.log('Prove it is tamper-evident (flip one byte → verify fails → restore):');
-  console.log('  see SHOWCASE.md\n');
+  console.log('Prove it is tamper-evident, live:');
+  console.log(`  attestor showcase --scenario ${scenario.id} --prove-tamper\n`);
 
   await harness.close();
-  return verification.ok ? 0 : 1;
+  return verification.ok;
+}
+
+/**
+ * Open the showcase store and run the REAL spine.verify(), printing a labelled
+ * result. Every verify display in the tamper proof goes through here, so no
+ * verification logic is re-implemented.
+ */
+async function verifyShowcase(label: string): Promise<VerificationResult> {
+  const keys = resolveKeyPair(KEY_PATH, {} as NodeJS.ProcessEnv);
+  const spine = await Spine.open({ kind: 'sqlite', path: SQLITE_PATH }, keys);
+  try {
+    const result = await spine.verify();
+    if (result.ok) {
+      console.log(
+        `  ${label}: ✅ VERIFIED — ${result.recordsChecked} records, ${result.checkpointsChecked} signed checkpoints, chain intact.`,
+      );
+    } else {
+      console.log(`  ${label}: ❌ FAILED — ${result.failures.length} issue(s) detected:`);
+      for (const f of result.failures) {
+        console.log(`        • [${f.kind}] at ${f.at ?? '—'}: ${f.detail}`);
+      }
+    }
+    return result;
+  } finally {
+    await spine.close();
+  }
+}
+
+/**
+ * The built-in tamper proof: verify (pass) → flip one byte out of band → verify
+ * (fail, naming the record) → restore the byte → verify (pass). Operates only on
+ * the isolated showcase store. Returns true iff the cycle behaved as expected.
+ */
+async function proveTamper(): Promise<boolean> {
+  console.log('— Built-in tamper proof (live, no hand-typed commands) —\n');
+
+  const v1 = await verifyShowcase('1) verify on fresh evidence      ');
+  const middle = Math.max(1, Math.ceil(v1.recordsChecked / 2));
+
+  const flipped = flipEvidenceByte(SQLITE_PATH, middle);
+  console.log(
+    `  2) tamper: flipped exactly 1 byte of evidence #${flipped.seq} (${flipped.action}) — ` +
+      `input_sha256 ${flipped.before.slice(0, 8)}… → ${flipped.after.slice(0, 8)}…`,
+  );
+
+  const v2 = await verifyShowcase('3) verify after tamper           ');
+
+  const restored = restoreEvidenceByte(SQLITE_PATH, middle);
+  console.log(`  4) restore: reverted the byte of evidence #${restored.seq} (XOR is its own inverse)`);
+
+  const v3 = await verifyShowcase('5) verify after restore          ');
+  console.log('');
+
+  const asExpected = v1.ok && !v2.ok && v3.ok;
+  if (asExpected) {
+    console.log('Tamper proof complete: detection works, and the restored log verifies again.\n');
+  } else {
+    console.error('Tamper proof did NOT behave as expected (see steps above).\n');
+  }
+  return asExpected;
 }
 
 /** Reconstruct the ordered account purely from the showcase evidence store. */
 async function runReplay(): Promise<number> {
-  const sqlitePath = join(SHOWCASE_DIR, 'evidence.sqlite');
-  if (!existsSync(sqlitePath)) {
-    console.error(`No showcase evidence at ${sqlitePath}. Run 'attestor showcase' first.`);
+  if (!existsSync(SQLITE_PATH)) {
+    console.error(`No showcase evidence at ${SQLITE_PATH}. Run 'attestor showcase' first.`);
     return 1;
   }
 
-  const keys = resolveKeyPair(join(SHOWCASE_DIR, 'signing-key.json'), {} as NodeJS.ProcessEnv);
-  const spine = await Spine.open({ kind: 'sqlite', path: sqlitePath }, keys);
+  const keys = resolveKeyPair(KEY_PATH, {} as NodeJS.ProcessEnv);
+  const spine = await Spine.open({ kind: 'sqlite', path: SQLITE_PATH }, keys);
   try {
     const [records, verification] = await Promise.all([
       spine.getAllRecords(),
