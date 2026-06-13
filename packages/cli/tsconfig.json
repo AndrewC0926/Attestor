@@ -4,11 +4,24 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "include": ["src/**/*.ts"],
+  "include": [
+    "src/**/*.ts"
+  ],
   "references": [
-    { "path": "../types" },
-    { "path": "../spine" },
-    { "path": "../gateway" },
-    { "path": "../showcase" }
+    {
+      "path": "../types"
+    },
+    {
+      "path": "../spine"
+    },
+    {
+      "path": "../gateway"
+    },
+    {
+      "path": "../showcase"
+    },
+    {
+      "path": "../anchor"
+    }
   ]
 }

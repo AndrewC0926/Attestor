@@ -13,6 +13,7 @@
     "packages/spine",
     "packages/gateway",
     "packages/showcase",
+    "packages/anchor",
     "packages/cli"
   ],
   "scripts": {

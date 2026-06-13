@@ -13,11 +13,23 @@ import {
   SHOWCASE_DIR,
   type Scenario,
 } from '@attestor/showcase';
+import type { Checkpoint } from '@attestor/types';
+import {
+  AnchorService,
+  AnchorStore,
+  TsaClient,
+  FREETSA,
+  httpTransport,
+  exportBundle,
+  writeBundle,
+  verifyAnchoredBundle,
+} from '@attestor/anchor';
 import type { CliConfig } from '../config.js';
 import { loadControlCatalog } from '../controls.js';
 import { buildReport } from '../report/build.js';
 import { renderMarkdown } from '../report/markdown.js';
 import { renderJson } from '../report/json.js';
+import { printAnchoredVerification } from './verify-anchored.js';
 
 export interface ShowcaseArgs {
   /** Scenario id (default: support-desk). */
@@ -26,7 +38,11 @@ export interface ShowcaseArgs {
   readonly replay?: boolean;
   /** When set, run the scenario then the built-in on-screen tamper proof. */
   readonly proveTamper?: boolean;
+  /** When set, anchor the latest checkpoint to a TSA and verify an exported bundle. */
+  readonly anchor?: boolean;
 }
+
+const BUNDLE_PATH = join(SHOWCASE_DIR, 'bundle.json');
 
 interface CallResult {
   isError?: boolean;
@@ -58,7 +74,7 @@ export async function runShowcase(config: CliConfig, args: ShowcaseArgs): Promis
     return 1;
   }
 
-  const runOk = await runScenario(config, scenario);
+  const runOk = await runScenario(config, scenario, { anchor: args.anchor === true });
   if (!args.proveTamper) {
     return runOk ? 0 : 1;
   }
@@ -67,7 +83,11 @@ export async function runShowcase(config: CliConfig, args: ShowcaseArgs): Promis
 }
 
 /** Drive a scenario live through the gateway, write the report, print summary. */
-async function runScenario(config: CliConfig, scenario: Scenario): Promise<boolean> {
+async function runScenario(
+  config: CliConfig,
+  scenario: Scenario,
+  opts: { anchor: boolean },
+): Promise<boolean> {
   const harness = await createShowcaseHarness(scenario, SHOWCASE_DIR);
   const { agent, spine } = harness;
 
@@ -127,6 +147,10 @@ async function runScenario(config: CliConfig, scenario: Scenario): Promise<boole
   console.log(`  Latest signed root: ${checkpoints.at(-1)?.merkleRoot ?? '—'}`);
   console.log(`  Attestation report: ${reportPrefix}.md (+ .json)\n`);
 
+  if (opts.anchor) {
+    await anchorAndVerify(records, checkpoints);
+  }
+
   console.log('Reconstruct it from the evidence alone:');
   console.log('  attestor showcase --replay');
   console.log('Prove it is tamper-evident, live:');
@@ -134,6 +158,46 @@ async function runScenario(config: CliConfig, scenario: Scenario): Promise<boole
 
   await harness.close();
   return verification.ok;
+}
+
+/**
+ * Anchor the latest checkpoint to a real RFC 3161 TSA, export a portable bundle,
+ * and run the independent three-part verification on that BUNDLE (not the live
+ * store). If the TSA is unreachable, the checkpoint is preserved as a flagged
+ * gap (graceful degradation) and the bundle still verifies chain + inclusion.
+ */
+async function anchorAndVerify(
+  records: readonly EvidenceRecord[],
+  checkpoints: readonly Checkpoint[],
+): Promise<void> {
+  const latest = checkpoints.at(-1);
+  if (!latest) {
+    return;
+  }
+
+  console.log('— External anchoring (RFC 3161 Trusted Timestamp) —');
+  console.log(`  Submitting checkpoint #${latest.id} root to ${FREETSA.name} …`);
+
+  const store = new AnchorStore(SHOWCASE_DIR);
+  const service = new AnchorService(store, new TsaClient(FREETSA, httpTransport(10_000)));
+  const receipt = await service.anchor(latest);
+  if (receipt.status === 'anchored') {
+    console.log(`  ✅ anchored — TSA asserts time ${receipt.genTime}`);
+  } else {
+    console.log(`  ⚠️  TSA unreachable (${receipt.error}); checkpoint queued as a flagged gap.`);
+    console.log('     (Re-run with network egress to anchor; the checkpoint is never lost.)');
+  }
+
+  const bundle = exportBundle({ records, checkpoints, anchors: store.all() });
+  writeBundle(BUNDLE_PATH, bundle);
+  console.log(`  Exported portable bundle: ${BUNDLE_PATH}`);
+
+  const inclusionSeq = Math.max(1, Math.ceil(records.length / 2));
+  console.log(
+    `\nIndependent verification of the exported bundle (no live DB, proving inclusion of record #${inclusionSeq}):`,
+  );
+  const verification = await verifyAnchoredBundle(bundle, { seq: inclusionSeq });
+  printAnchoredVerification(verification);
 }
 
 /**

@@ -161,6 +161,60 @@ checkpoints commit to the whole prefix. Changing a single byte breaks the
 record's own hash (and, depending on the field, the chain link and checkpoint
 root) — exactly what `verify` re-derives independently.
 
+## Prove it to a third party — external anchoring (RFC 3161)
+
+Everything above proves the log is *internally* consistent — but that still
+requires trusting whoever holds the spine. The `@attestor/anchor` package closes
+that gap: after a checkpoint is signed, its Merkle root is submitted to an
+**independent RFC 3161 Trusted Timestamp Authority** (freetsa.org), and the
+returned timestamp token is stored as an *anchor receipt*. Now the root's
+existence at a point in time is attested by a third party the operator does not
+control.
+
+```bash
+attestor showcase --scenario finance --anchor
+```
+
+This runs the scenario, anchors the latest checkpoint root to the TSA, exports a
+**portable bundle** (`.attestor/showcase/bundle.json` — records + signed roots +
+anchor tokens + TSA trust anchors), and runs the independent three-part
+verification on that bundle:
+
+```
+(1) Internal chain integrity (re-derived, no operator trust):
+    ✅ VERIFIED — 6 records, 1 signed checkpoints, chain intact.
+(2) External RFC 3161 anchors (attested by an independent TSA):
+    ✅ checkpoint #1 (tree size 6) anchored at 2026-06-13T12:34:56.000Z by freetsa.org
+(3) Merkle inclusion in an anchored root:
+    ✅ record 4 is provably included in anchored checkpoint 1 (tree size 6)
+
+Independent verdict: ✅ the evidence is authentic and externally anchored
+```
+
+Anyone can re-run that verification on the exported bundle **without the live
+database and without trusting you**:
+
+```bash
+attestor verify-anchored --bundle ./bundle.json --seq 4
+```
+
+Design notes:
+
+- **Asynchronous & non-blocking.** The checkpoint is created and signed locally;
+  the TSA call happens *after*, off the spine's path. It never blocks `append`
+  or `checkpoint`.
+- **Never loses a checkpoint.** If the TSA is unreachable, the checkpoint is
+  preserved as a `pending`/`failed` anchor receipt (a flagged gap) and retried
+  later — the local signed checkpoint is untouched. Run `--anchor` without
+  network egress and you'll see it degrade gracefully and queue the gap.
+- **No hand-rolled crypto.** RFC 3161 request/response and the CMS token are
+  handled by `pkijs`/`asn1js`; the signature check uses Node WebCrypto. Chain
+  integrity and Merkle inclusion reuse the spine's exported functions verbatim.
+- **Live TSA.** The genuine freetsa.org anchor needs outbound network egress; in
+  a restricted environment the offline tests cover the full path with a
+  self-signed test TSA, and the live integration test runs with
+  `ATTESTOR_LIVE_TSA=1`.
+
 ## Where the code lives
 
 ```
@@ -174,7 +228,15 @@ packages/showcase/                       # the additive demo layer (own package)
   src/scenarios/support-desk.ts          # support-desk scenario (tools/policy/steps)
   src/scenarios/finance.ts               # finance scenario (tools/policy/steps)
   src/tools.ts, src/policy.ts, src/scenario.ts   # support-desk tools/policy/steps
+packages/anchor/                         # external RFC 3161 anchoring (own package)
+  src/rfc3161.ts                         # build/verify timestamp tokens (pkijs/asn1js)
+  src/tsa-client.ts                      # TSA HTTP client (freetsa.org), pluggable transport
+  src/anchor-store.ts                    # durable sidecar receipts (pending/anchored/failed)
+  src/anchor-service.ts                  # async, graceful anchoring + retry of gaps
+  src/bundle.ts                          # portable bundle export/read
+  src/verify-bundle.ts                   # three-part verification (reuses spine verify+merkle)
 packages/cli/src/commands/showcase.ts    # the `attestor showcase` driver (prints live)
+packages/cli/src/commands/verify-anchored.ts   # the `attestor verify-anchored` command
 ```
 
 The spine (`packages/spine`) and the gateway core (`packages/gateway/src`) are

@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    // pkijs / @peculiar / asn1js are authored against the WebCrypto (DOM) type
+    // surface (Crypto, CryptoKey, ...). Add the DOM lib for this package so those
+    // types resolve; Node's webcrypto is the concrete implementation at runtime.
+    "lib": ["ES2022", "DOM"],
+    // pkijs/asn1js type definitions model many optional members as `T | undefined`
+    // and use index signatures that clash with exactOptionalPropertyTypes at the
+    // crypto-library boundary. Scope that one flag off here only (as gateway and
+    // showcase already do for the MCP SDK); all other strict checks remain on.
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/**/*.ts"],
+  "references": [{ "path": "../types" }, { "path": "../spine" }]
+}
