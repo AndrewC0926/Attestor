@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@attestor/gateway": "0.1.0",
+    "@attestor/showcase": "0.1.0",
     "@attestor/spine": "0.1.0",
     "@attestor/types": "0.1.0",
     "@modelcontextprotocol/sdk": "^1.13.0"

@@ -12,6 +12,7 @@
     "packages/types",
     "packages/spine",
     "packages/gateway",
+    "packages/showcase",
     "packages/cli"
   ],
   "scripts": {
