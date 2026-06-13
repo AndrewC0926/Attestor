@@ -4,6 +4,7 @@ import { resolveConfig } from './config.js';
 import { runVerify } from './commands/verify.js';
 import { runAttest, type AttestArgs } from './commands/attest.js';
 import { runDemo } from './commands/demo.js';
+import { runShowcase } from './commands/showcase.js';
 
 const HELP = `attestor — audit gateway evidence CLI
 
@@ -13,6 +14,8 @@ Usage:
   attestor attest [--from <iso>] [--to <iso>] [--out <prefix>]
                                          Compile a compliance report (Markdown + JSON)
   attestor demo                          Run the end-to-end demo scenario
+  attestor showcase [--replay]           Run the support-desk governance showcase
+                                         (--replay reconstructs it from evidence)
   attestor help                          Show this help
 
 Environment:
@@ -53,6 +56,13 @@ async function main(): Promise<number> {
     }
     case 'demo':
       return runDemo(config);
+    case 'showcase': {
+      const { values } = parseArgs({
+        args: rest,
+        options: { replay: { type: 'boolean' } },
+      });
+      return runShowcase(config, values.replay ? { replay: true } : {});
+    }
     case 'help':
     case undefined:
       console.log(HELP);

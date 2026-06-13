@@ -4,6 +4,7 @@
     { "path": "packages/types" },
     { "path": "packages/spine" },
     { "path": "packages/gateway" },
+    { "path": "packages/showcase" },
     { "path": "packages/cli" }
   ]
 }

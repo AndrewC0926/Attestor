@@ -8,6 +8,7 @@
   "references": [
     { "path": "../types" },
     { "path": "../spine" },
-    { "path": "../gateway" }
+    { "path": "../gateway" },
+    { "path": "../showcase" }
   ]
 }
