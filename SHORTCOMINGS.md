@@ -71,3 +71,19 @@ is a known, intentional limitation — not a bug.
 - **Reports are evidence summaries, not certifications.** `attestor attest`
   compiles what happened and proves the log is intact. It does not assert
   conformance with any framework; that judgment belongs to your assessor.
+
+## Known limitations (Phase 1)
+
+- Audit scope is limited to the MCP channel. The gateway records actions 
+  an agent takes through MCP servers it is configured to forward. Agent 
+  behavior through other channels is out of scope for Phase 1 and is 
+  planned for later phases.
+
+- Evidence records store cryptographic digests of inputs and outputs by 
+  default, not full content. Full-content retention is opt-in per policy. 
+  This is a deliberate privacy-preserving default so the audit layer does 
+  not retain customer payloads unless explicitly configured to.
+
+- Phase 1 records a single agent's action sequence cleanly. Workflows 
+  where agents invoke other agents are not fully modeled yet; nested 
+  attribution across multiple agents is planned for a later phase.
