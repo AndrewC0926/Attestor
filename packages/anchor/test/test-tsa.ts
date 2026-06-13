@@ -29,16 +29,32 @@ export interface TestTsa {
   sign(digest: Buffer, genTime?: Date): Promise<Buffer>;
 }
 
-export async function createTestTsa(): Promise<TestTsa> {
+/** Map a WebCrypto digest name to its Node crypto name. */
+const NODE_HASH: Readonly<Record<string, string>> = {
+  'SHA-256': 'sha256',
+  'SHA-384': 'sha384',
+  'SHA-512': 'sha512',
+};
+
+/**
+ * Create a self-signed test TSA. `hash` selects the digest algorithm the TSA
+ * signs with — real TSAs differ (freetsa.org uses SHA-512), so tests cover more
+ * than SHA-256.
+ */
+export async function createTestTsa(
+  options: { hash?: 'SHA-256' | 'SHA-384' | 'SHA-512' } = {},
+): Promise<TestTsa> {
   ensureCryptoEngine();
   const crypto = nodeCrypto();
   x509.cryptoProvider.set(crypto);
 
+  const hash = options.hash ?? 'SHA-256';
+  const nodeHash = NODE_HASH[hash] ?? 'sha256';
   const alg: RsaHashedKeyGenParams = {
     name: 'RSASSA-PKCS1-v1_5',
     modulusLength: 2048,
     publicExponent: new Uint8Array([1, 0, 1]),
-    hash: 'SHA-256',
+    hash,
   };
   const keys = (await crypto.subtle.generateKey(alg, true, ['sign', 'verify'])) as CryptoKeyPair;
 
@@ -71,7 +87,7 @@ export async function createTestTsa(): Promise<TestTsa> {
       genTime,
     });
     const tstInfoDer = tstInfo.toSchema().toBER(false);
-    const messageDigest = createHash('sha256').update(Buffer.from(tstInfoDer)).digest();
+    const messageDigest = createHash(nodeHash).update(Buffer.from(tstInfoDer)).digest();
 
     const signedData = new pkijs.SignedData({
       version: 3,
@@ -107,7 +123,7 @@ export async function createTestTsa(): Promise<TestTsa> {
       ],
       certificates: [pkijsCert],
     });
-    await signedData.sign(keys.privateKey, 0, 'SHA-256');
+    await signedData.sign(keys.privateKey, 0, hash);
 
     const contentInfo = new pkijs.ContentInfo({
       contentType: ID_SIGNED_DATA,

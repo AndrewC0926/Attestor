@@ -130,12 +130,37 @@ function signedMessageDigest(signerInfo: pkijs.SignerInfo): Buffer | null {
   return value instanceof asn1js.OctetString ? octetStringBytes(value) : null;
 }
 
+interface HashNames {
+  /** Node crypto digest name. */
+  readonly node: string;
+  /** WebCrypto digest name. */
+  readonly webcrypto: string;
+}
+
+/**
+ * Digest algorithms a TSA may use. A real TSA declares which one it used in
+ * `signerInfo.digestAlgorithm`; freetsa.org, for example, uses SHA-512. We MUST
+ * derive the hash from the token rather than assume SHA-256.
+ */
+const DIGEST_ALGORITHMS: Readonly<Record<string, HashNames>> = {
+  '1.3.14.3.2.26': { node: 'sha1', webcrypto: 'SHA-1' },
+  '2.16.840.1.101.3.4.2.1': { node: 'sha256', webcrypto: 'SHA-256' },
+  '2.16.840.1.101.3.4.2.2': { node: 'sha384', webcrypto: 'SHA-384' },
+  '2.16.840.1.101.3.4.2.3': { node: 'sha512', webcrypto: 'SHA-512' },
+};
+
+/** Resolve the hash names declared by the signer, or null if unsupported. */
+function resolveSignerHash(signerInfo: pkijs.SignerInfo): HashNames | null {
+  return DIGEST_ALGORITHMS[signerInfo.digestAlgorithm.algorithmId] ?? null;
+}
+
 /**
  * Verify the SignerInfo signature with WebCrypto. pkijs/asn1js do all the ASN.1;
- * the signature math is the platform's vetted RSASSA-PKCS1-v1.5/SHA-256. When
- * signed attributes are present (as real TSAs and our test TSA emit), the signed
- * value is the DER of the SignedAttributes re-tagged as an explicit SET OF
- * (RFC 5652 §5.4); otherwise it is the eContent octets.
+ * the signature math is the platform's vetted RSASSA-PKCS1-v1.5 with the digest
+ * the TSA actually declared (NOT a hardcoded SHA-256). When signed attributes
+ * are present (as real TSAs and our test TSA emit), the signed value is the DER
+ * of the SignedAttributes re-tagged as an explicit SET OF (RFC 5652 §5.4);
+ * otherwise it is the eContent octets.
  */
 async function verifySignerSignature(
   signedData: pkijs.SignedData,
@@ -143,10 +168,18 @@ async function verifySignerSignature(
   signerCert: pkijs.Certificate,
   eContentBytes: Buffer,
 ): Promise<{ ok: boolean; detail?: string }> {
+  const hash = resolveSignerHash(signerInfo);
+  if (!hash) {
+    return {
+      ok: false,
+      detail: `unsupported digest algorithm ${signerInfo.digestAlgorithm.algorithmId}`,
+    };
+  }
+
   let signedBytes: Buffer;
   if (signerInfo.signedAttrs) {
     const md = signedMessageDigest(signerInfo);
-    const eHash = createHash('sha256').update(eContentBytes).digest();
+    const eHash = createHash(hash.node).update(eContentBytes).digest();
     if (!md || !md.equals(eHash)) {
       return { ok: false, detail: 'messageDigest attribute does not match the TSTInfo content' };
     }
@@ -162,7 +195,7 @@ async function verifySignerSignature(
   const key = await nodeCrypto().subtle.importKey(
     'spki',
     spki,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    { name: 'RSASSA-PKCS1-v1_5', hash: hash.webcrypto },
     false,
     ['verify'],
   );
