@@ -35,11 +35,35 @@ Pick a scenario with `--scenario <id>` (default `support-desk`):
 | `wire_external` | T3 | **deny** |
 | `pull_full_ledger` | T3 | **deny** |
 
-- Each argument-aware threshold (`issue_refund`, `move_funds`) is enforced by an
-  additive policy engine built on the shared `createAmountAwarePolicyEngine`
-  helper, layered on the product's name-pattern `PolicyV0Engine` — the same
-  `PolicyEngine` extension point a real OPA/Cedar engine would use. The product
-  policy set is untouched, and the two scenarios share no mutable state.
+**`aml`** — a BSA/AML investigation agent working a transaction-monitoring alert
+(examined against the FFIEC BSA/AML manual standard):
+
+| Tool | Tier | Decision |
+|------|------|----------|
+| `review_alert` | T0 | allow |
+| `pull_customer_profile` | T1 | allow |
+| `screen_sanctions_pep` | T1 | allow |
+| `dismiss_alert` | T2 | allow (auditable disposition + rationale) |
+| `report_ctr` | T3 | **none ≤ $10,000, MANDATORY CTR > $10,000** (argument-aware) |
+| `file_sar` | T3 | **escalate** — requires BSA officer authorization |
+| `notify_customer_of_sar` | T3 | **deny** — illegal "tipping off" |
+
+  The AML run models the real workflow: L1 triage, L2 enhanced due diligence
+  (KYC, sanctions/PEP/adverse-media), clearing a transliteration false-positive
+  leg with a recorded rationale, the routine **mandatory CTR** (FinCEN Form 112,
+  31 CFR 1010.311) for cash over $10,000, the discretionary **SAR** (FinCEN Form
+  111) escalating to a BSA officer, and the gateway **blocking an illegal tipping-
+  off attempt** with the regulatory rationale on the record. Controls cite the
+  actual BSA/AML obligations (SAR, CTR, 5-year recordkeeping). The CTR is the
+  *mandatory* threshold (distinct from the discretionary, confidential SAR).
+
+- Each argument-aware threshold (`issue_refund`, `move_funds`, `report_ctr`) is
+  enforced by an additive policy engine built on the shared
+  `createAmountAwarePolicyEngine` helper, layered on the product's name-pattern
+  `PolicyV0Engine` — the same `PolicyEngine` extension point a real OPA/Cedar
+  engine would use. The product policy set is untouched, and the scenarios share
+  no mutable state. `--replay`, `--prove-tamper`, and `--anchor` are
+  scenario-agnostic and work with all of them.
 - Every action becomes a **signed, hash-chained evidence record** in the same
   spine as Phase 1, written to an **isolated store** (`.attestor/showcase/`,
   reset at the start of each run) so it never collides with `attestor demo`.
@@ -227,6 +251,7 @@ packages/showcase/                       # the additive demo layer (own package)
   src/scenarios/index.ts                 # scenario registry (id → scenario)
   src/scenarios/support-desk.ts          # support-desk scenario (tools/policy/steps)
   src/scenarios/finance.ts               # finance scenario (tools/policy/steps)
+  src/scenarios/aml.ts                   # AML/BSA investigation scenario (tools/policy/steps)
   src/tools.ts, src/policy.ts, src/scenario.ts   # support-desk tools/policy/steps
 packages/anchor/                         # external RFC 3161 anchoring (own package)
   src/rfc3161.ts                         # build/verify timestamp tokens (pkijs/asn1js)

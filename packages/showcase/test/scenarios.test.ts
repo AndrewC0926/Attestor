@@ -9,10 +9,11 @@ import { getScenario, SCENARIO_IDS, DEFAULT_SCENARIO_ID } from '../src/scenarios
 import { projectReplay } from '../src/replay.js';
 
 describe('scenario registry', () => {
-  it('registers both scenarios and defaults to support-desk', () => {
-    expect(SCENARIO_IDS).toEqual(['support-desk', 'finance']);
+  it('registers all scenarios and defaults to support-desk', () => {
+    expect(SCENARIO_IDS).toEqual(['support-desk', 'finance', 'aml']);
     expect(DEFAULT_SCENARIO_ID).toBe('support-desk');
     expect(getScenario('finance')?.id).toBe('finance');
+    expect(getScenario('aml')?.id).toBe('aml');
     expect(getScenario('nope')).toBeUndefined();
   });
 });
