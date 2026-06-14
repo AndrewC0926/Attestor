@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "exactOptionalPropertyTypes": false
   },
   "include": [
     "src/**/*.ts"
@@ -22,6 +23,15 @@
     },
     {
       "path": "../anchor"
+    },
+    {
+      "path": "../proxy"
+    },
+    {
+      "path": "../test-tools"
+    },
+    {
+      "path": "../test-agent"
     }
   ]
 }

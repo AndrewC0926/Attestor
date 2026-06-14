@@ -6,6 +6,7 @@ import { runAttest, type AttestArgs } from './commands/attest.js';
 import { runDemo } from './commands/demo.js';
 import { runShowcase } from './commands/showcase.js';
 import { runVerifyAnchored } from './commands/verify-anchored.js';
+import { runLiveDemo } from './commands/live-demo.js';
 
 const HELP = `attestor — audit gateway evidence CLI
 
@@ -26,6 +27,10 @@ Usage:
                                          --prove-tamper runs the live tamper proof;
                                          --anchor anchors to an RFC 3161 TSA and
                                          verifies an exported bundle.
+  attestor live-demo [--anchor]          Real MCP interception end-to-end: a real
+                                         agent → Attestor proxy → real downstream
+                                         tools (sandboxed side effects), recorded
+                                         as real evidence (--anchor to a TSA).
   attestor help                          Show this help
 
 Environment:
@@ -66,6 +71,10 @@ async function main(): Promise<number> {
     }
     case 'demo':
       return runDemo(config);
+    case 'live-demo': {
+      const { values } = parseArgs({ args: rest, options: { anchor: { type: 'boolean' } } });
+      return runLiveDemo(values.anchor ? { anchor: true } : {});
+    }
     case 'verify-anchored': {
       const { values } = parseArgs({
         args: rest,
