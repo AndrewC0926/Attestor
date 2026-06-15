@@ -18,6 +18,15 @@
     },
     {
       "path": "packages/cli"
+    },
+    {
+      "path": "packages/test-tools"
+    },
+    {
+      "path": "packages/proxy"
+    },
+    {
+      "path": "packages/test-agent"
     }
   ]
 }

@@ -68,6 +68,40 @@ Pick a scenario with `--scenario <id>` (default `support-desk`):
   spine as Phase 1, written to an **isolated store** (`.attestor/showcase/`,
   reset at the start of each run) so it never collides with `attestor demo`.
 
+## Live demo — REAL MCP interception (not scripted)
+
+The scenarios above feed *scripted* calls through the gateway. `attestor
+live-demo` replaces that scripted boundary with **real MCP traffic**: a real MCP
+agent connects to the **Attestor proxy** over real Streamable HTTP; the proxy
+fronts **real downstream tools** running as a spawned stdio subprocess (real
+file/compute side effects in a sandbox). The agent is handed **only** the proxy
+transport — it cannot reach the tools except through Attestor (a true
+man-in-the-middle, not a cooperative wrapper).
+
+```bash
+attestor live-demo            # real agent → Attestor proxy → real tools
+attestor live-demo --anchor   # …then anchor the evidence to a TSA
+```
+
+Hot path (a real product decision, in `packages/proxy`):
+
+- **deny / escalate** → record the blocked attempt, **never forward**.
+- **allow, T2/T3** → record an `authorized` event **durably before** forwarding
+  (if that write fails, the action is **DENIED** — no action without evidence);
+  then forward; then record the `result`. Two records separate the
+  *authorization* from the *execution* — exactly what an examiner needs.
+  (Latency: a T2/T3 action pays one durable evidence write before it runs.)
+- **allow, T0/T1** → forward, then record (reads don't pay the write up front).
+- Downstream timeout/unreachable is bounded, recorded, and returned as a clean
+  MCP error — it never hangs and never corrupts the chain.
+
+The run prints the agent transcript (allow / escalate / deny), the real
+evidence summary, and **proof the boundary is real**: the allowed `write_disposition`
+file exists, while the case records are intact because `purge_records` was
+denied. The evidence passes the **same `verify` / inclusion / `--anchor`** path
+as the showcase. It reuses the gateway's decision logic and the spine verbatim;
+the spine and gateway core are unchanged.
+
 ## Run it
 
 ```bash
@@ -262,6 +296,13 @@ packages/anchor/                         # external RFC 3161 anchoring (own pack
   src/verify-bundle.ts                   # three-part verification (reuses spine verify+merkle)
 packages/cli/src/commands/showcase.ts    # the `attestor showcase` driver (prints live)
 packages/cli/src/commands/verify-anchored.ts   # the `attestor verify-anchored` command
+packages/proxy/                          # REAL MCP interception (own package)
+  src/proxy-core.ts                      # hot path: classify → record(-before-forward) → forward
+  src/server.ts                          # the proxy as a real MCP server
+  src/http.ts                            # serve the proxy over real Streamable HTTP
+packages/test-tools/                     # real downstream MCP tools (sandboxed side effects)
+packages/test-agent/                     # a minimal real MCP-native agent
+packages/cli/src/commands/live-demo.ts   # the `attestor live-demo` driver
 ```
 
 The spine (`packages/spine`) and the gateway core (`packages/gateway/src`) are
