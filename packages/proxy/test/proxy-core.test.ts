@@ -158,7 +158,7 @@ describe('ProxyCore — hot path (decide → record → maybe forward)', () => {
 
   it('fail-closed: if the authorized write fails on a T3, the action is DENIED and never forwarded', async () => {
     const failing = new ProxyCore(engine, new FailingSink(), null);
-    const spy = vi.fn<Parameters<Forward>, ReturnType<Forward>>(() => Promise.resolve({}));
+    const spy = vi.fn<Forward>(() => Promise.resolve({}));
     const out = await failing.handle(call('write_disposition', { caseId: 'C3' }), spy);
     expect(out.allowed).toBe(false);
     expect(out.error?.code).toBe('evidence_unavailable');
