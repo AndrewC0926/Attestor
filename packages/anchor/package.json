@@ -1,0 +1,26 @@
+{
+  "name": "@attestor/anchor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@attestor/spine": "0.1.0",
+    "@attestor/types": "0.1.0",
+    "asn1js": "^3.0.5",
+    "pkijs": "^3.2.4"
+  },
+  "devDependencies": {
+    "@peculiar/x509": "^1.12.3"
+  }
+}

@@ -12,8 +12,13 @@
     "build": "tsc --build"
   },
   "dependencies": {
+    "@attestor/anchor": "0.1.0",
     "@attestor/gateway": "0.1.0",
+    "@attestor/proxy": "0.1.0",
+    "@attestor/showcase": "0.1.0",
     "@attestor/spine": "0.1.0",
+    "@attestor/test-agent": "0.1.0",
+    "@attestor/test-tools": "0.1.0",
     "@attestor/types": "0.1.0",
     "@modelcontextprotocol/sdk": "^1.13.0"
   }

@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    // The MCP SDK's Transport types declare optional members as `T | undefined`,
+    // which clashes with exactOptionalPropertyTypes at the SDK boundary (the
+    // gateway scopes the same flag off). All other strict checks remain on.
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../types" },
+    { "path": "../spine" },
+    { "path": "../gateway" }
+  ]
+}

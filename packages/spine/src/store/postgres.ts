@@ -11,6 +11,24 @@ import type { EvidenceStore } from './types.js';
  * (defends against the application role), and a REVOKE of UPDATE/DELETE from the
  * connecting role (defends against ad-hoc SQL). The trigger is the primary
  * guarantee because it also binds the table owner, which REVOKE does not.
+ *
+ * Concurrency: the hash chain requires that appends are strictly serialized —
+ * each new record commits to the previous record's hash, so two appends must
+ * not read the same tail. `append` takes a transaction-scoped advisory lock
+ * (`pg_advisory_xact_lock`) before reading the tail and inserting, so exactly
+ * one appender derives `prevHash → record_hash → insert` at a time and the lock
+ * releases on COMMIT/ROLLBACK. This serializes the read-tail/insert critical
+ * section itself, so it is correct regardless of isolation level and keeps `seq`
+ * gap-free and the chain intact under concurrent writers; reads are unaffected.
+ * (Proven by the concurrency test in postgres-parity.test.ts.)
+ *
+ * Retention: records are never deleted — append-only already guarantees that, so
+ * the 5-year SAR/CTR recordkeeping floor is met simply by *keeping* the table.
+ * There is deliberately no time-based deletion path; deleting evidence would
+ * contradict the immutability guarantee. Meeting a real 5-year retention SLA is
+ * therefore an operational concern (durable storage + a backup/recovery regime,
+ * and optionally time-range PARTITIONing of `evidence_record` by `recorded_at`
+ * for very large logs); it does not change this store's contract.
  */
 
 const SCHEMA = `

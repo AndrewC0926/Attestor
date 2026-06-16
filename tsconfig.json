@@ -1,9 +1,32 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/types" },
-    { "path": "packages/spine" },
-    { "path": "packages/gateway" },
-    { "path": "packages/cli" }
+    {
+      "path": "packages/types"
+    },
+    {
+      "path": "packages/spine"
+    },
+    {
+      "path": "packages/gateway"
+    },
+    {
+      "path": "packages/showcase"
+    },
+    {
+      "path": "packages/anchor"
+    },
+    {
+      "path": "packages/cli"
+    },
+    {
+      "path": "packages/test-tools"
+    },
+    {
+      "path": "packages/proxy"
+    },
+    {
+      "path": "packages/test-agent"
+    }
   ]
 }
