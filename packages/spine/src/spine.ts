@@ -6,9 +6,10 @@ import type {
   VerificationResult,
 } from '@attestor/types';
 import type { SpineKeyPair } from './signing.js';
+import { type Signer, toSigner } from './signer.js';
 import type { EvidenceStore, StoreConfig } from './store/index.js';
 import { createStore } from './store/index.js';
-import { buildCheckpoint } from './checkpoint.js';
+import { signCheckpoint } from './checkpoint.js';
 import { buildInclusionProof, verifyInclusionProof } from './merkle.js';
 import { verifyLog } from './verify.js';
 
@@ -29,15 +30,19 @@ export class Spine {
 
   private constructor(
     private readonly store: EvidenceStore,
-    private readonly keys: SpineKeyPair,
+    private readonly signer: Signer,
     private readonly checkpointInterval: number,
     private readonly now: () => string,
   ) {}
 
-  /** Open a spine over a configured store; initializes schema and protections. */
+  /**
+   * Open a spine over a configured store; initializes schema and protections.
+   * `keys` may be a raw keypair (wrapped in the default local signer, unchanged
+   * behaviour) or a `Signer` for HSM/KMS-backed signing.
+   */
   static async open(
     config: StoreConfig,
-    keys: SpineKeyPair,
+    keys: SpineKeyPair | Signer,
     options: SpineOptions = {},
   ): Promise<Spine> {
     const store = createStore(config);
@@ -47,13 +52,13 @@ export class Spine {
   /** Wrap an already-constructed store (used by tests with a shared handle). */
   static async fromStore(
     store: EvidenceStore,
-    keys: SpineKeyPair,
+    keys: SpineKeyPair | Signer,
     options: SpineOptions = {},
   ): Promise<Spine> {
     await store.init();
     return new Spine(
       store,
-      keys,
+      toSigner(keys),
       options.checkpointInterval ?? 0,
       options.now ?? ((): string => new Date().toISOString()),
     );
@@ -75,7 +80,7 @@ export class Spine {
   /** Create and persist a signed checkpoint over the entire log. */
   async checkpoint(): Promise<Checkpoint> {
     const records = await this.store.getAllRecords();
-    const body = buildCheckpoint(records, this.keys, this.now());
+    const body = await signCheckpoint(records, this.signer, this.now());
     const checkpoint = await this.store.appendCheckpoint(body);
     this.appendedSinceCheckpoint = 0;
     return checkpoint;

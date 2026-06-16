@@ -59,8 +59,12 @@ CREATE TABLE IF NOT EXISTS evidence_checkpoint (
   merkle_root  TEXT    NOT NULL,
   created_at   TEXT    NOT NULL,
   signature    TEXT    NOT NULL,
-  public_key   TEXT    NOT NULL
+  public_key   TEXT    NOT NULL,
+  key_id       TEXT
 );
+
+-- Additive migration for pre-existing databases (legacy rows keep key_id NULL).
+ALTER TABLE evidence_checkpoint ADD COLUMN IF NOT EXISTS key_id TEXT;
 
 CREATE OR REPLACE FUNCTION attestor_block_mutation() RETURNS trigger AS $$
 BEGIN
@@ -116,6 +120,7 @@ interface CheckpointRow {
   created_at: string;
   signature: string;
   public_key: string;
+  key_id: string | null;
 }
 
 function rowToRecord(row: RecordRow): EvidenceRecord {
@@ -149,6 +154,7 @@ function rowToCheckpoint(row: CheckpointRow): Checkpoint {
     createdAt: row.created_at,
     signature: row.signature,
     publicKey: row.public_key,
+    ...(row.key_id ? { keyId: row.key_id } : {}),
   };
 }
 
@@ -254,14 +260,15 @@ export class PostgresEvidenceStore implements EvidenceStore {
   async appendCheckpoint(checkpoint: Omit<Checkpoint, 'id'>): Promise<Checkpoint> {
     const res = await this.pool.query<{ id: string }>(
       `INSERT INTO evidence_checkpoint
-         (tree_size, merkle_root, created_at, signature, public_key)
-       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+         (tree_size, merkle_root, created_at, signature, public_key, key_id)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
       [
         checkpoint.treeSize,
         checkpoint.merkleRoot,
         checkpoint.createdAt,
         checkpoint.signature,
         checkpoint.publicKey,
+        checkpoint.keyId ?? null,
       ],
     );
     return { id: Number(res.rows[0]?.id), ...checkpoint };
