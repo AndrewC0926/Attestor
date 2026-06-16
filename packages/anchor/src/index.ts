@@ -22,6 +22,8 @@ export {
   TsaClient,
   httpTransport,
   FREETSA,
+  DIGICERT_TSA,
+  SECTIGO_TSA,
   type TsaConfig,
   type TsaTransport,
 } from './tsa-client.js';
@@ -30,7 +32,7 @@ export {
   type AnchorReceipt,
   type AnchorStatus,
 } from './anchor-store.js';
-export { AnchorService } from './anchor-service.js';
+export { AnchorService, type AnchorLag } from './anchor-service.js';
 export {
   exportBundle,
   writeBundle,

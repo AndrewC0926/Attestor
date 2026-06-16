@@ -188,7 +188,12 @@ async function anchorAndVerify(
     console.log('     (Re-run with network egress to anchor; the checkpoint is never lost.)');
   }
 
-  const bundle = exportBundle({ records, checkpoints, anchors: store.all() });
+  const bundle = exportBundle({
+    records,
+    checkpoints,
+    anchors: store.all(),
+    tsaCertsPem: service.trustedCertsPem(),
+  });
   writeBundle(BUNDLE_PATH, bundle);
   console.log(`  Exported portable bundle: ${BUNDLE_PATH}`);
 
