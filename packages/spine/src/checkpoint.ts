@@ -2,6 +2,7 @@ import type { Checkpoint, EvidenceRecord } from '@attestor/types';
 import { canonicalize } from './canonical.js';
 import { merkleRootHex } from './merkle.js';
 import { signMessage, verifySignature } from './signing.js';
+import type { Signer } from './signer.js';
 
 /**
  * Checkpoints are signed tree heads: a Merkle root over records 1..treeSize,
@@ -60,4 +61,31 @@ export function verifyCheckpointSignature(checkpoint: Checkpoint): boolean {
     checkpointSigningBytes(checkpoint),
     checkpoint.signature,
   );
+}
+
+/**
+ * Build and sign a checkpoint via a `Signer` (the pluggable path used by the
+ * spine). It signs the EXACT SAME `checkpointSigningBytes` as `buildCheckpoint`
+ * and embeds the signer's public key, so the signature format is unchanged and
+ * `verifyCheckpointSignature` validates it without modification. The signer's
+ * `keyId` is recorded for rotation but is deliberately NOT part of the signed
+ * bytes, so its presence never affects verification of any checkpoint.
+ */
+export async function signCheckpoint(
+  records: readonly EvidenceRecord[],
+  signer: Signer,
+  createdAt: string,
+): Promise<Omit<Checkpoint, 'id'>> {
+  const treeSize = records.length;
+  const merkleRoot = merkleRootOfRecords(records);
+  const signature = await signer.sign(checkpointSigningBytes({ treeSize, merkleRoot, createdAt }));
+  const publicKey = await signer.publicKeyHex();
+  return {
+    treeSize,
+    merkleRoot,
+    createdAt,
+    signature,
+    publicKey,
+    ...(signer.keyId !== undefined ? { keyId: signer.keyId } : {}),
+  };
 }

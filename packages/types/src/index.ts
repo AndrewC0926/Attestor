@@ -118,6 +118,14 @@ export interface Checkpoint {
   readonly signature: string;
   /** Hex Ed25519 public key the signature verifies against. */
   readonly publicKey: string;
+  /**
+   * Optional key-version id of the signer that produced this checkpoint, for key
+   * rotation. Additive and backward-compatible: legacy checkpoints omit it, and
+   * it is NOT part of the signed bytes — verification uses `publicKey` +
+   * `signature` only, so rotation never breaks verification of historical
+   * checkpoints (each verifies against the key embedded in it).
+   */
+  readonly keyId?: string;
 }
 
 /** Outcome of a full or partial integrity verification pass. */
