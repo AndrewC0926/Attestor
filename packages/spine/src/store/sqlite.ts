@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS evidence_checkpoint (
   merkle_root  TEXT    NOT NULL,
   created_at   TEXT    NOT NULL,
   signature    TEXT    NOT NULL,
-  public_key   TEXT    NOT NULL
+  public_key   TEXT    NOT NULL,
+  key_id       TEXT
 );
 
 CREATE TRIGGER IF NOT EXISTS evidence_checkpoint_no_update
@@ -95,6 +96,7 @@ interface CheckpointRow {
   created_at: string;
   signature: string;
   public_key: string;
+  key_id: string | null;
 }
 
 function rowToRecord(row: RecordRow): EvidenceRecord {
@@ -128,6 +130,7 @@ function rowToCheckpoint(row: CheckpointRow): Checkpoint {
     createdAt: row.created_at,
     signature: row.signature,
     publicKey: row.public_key,
+    ...(row.key_id ? { keyId: row.key_id } : {}),
   };
 }
 
@@ -142,6 +145,14 @@ export class SqliteEvidenceStore implements EvidenceStore {
 
   init(): Promise<void> {
     this.db.exec(SCHEMA);
+    // Additive migration for pre-existing databases: add the nullable key_id
+    // column if an older schema lacks it. Legacy rows keep key_id = NULL.
+    const columns = this.db
+      .prepare<[], { name: string }>('PRAGMA table_info(evidence_checkpoint)')
+      .all();
+    if (!columns.some((c) => c.name === 'key_id')) {
+      this.db.exec('ALTER TABLE evidence_checkpoint ADD COLUMN key_id TEXT');
+    }
     return Promise.resolve();
   }
 
@@ -230,8 +241,8 @@ export class SqliteEvidenceStore implements EvidenceStore {
     const info = this.db
       .prepare<unknown[]>(
         `INSERT INTO evidence_checkpoint
-           (tree_size, merkle_root, created_at, signature, public_key)
-         VALUES (?,?,?,?,?)`,
+           (tree_size, merkle_root, created_at, signature, public_key, key_id)
+         VALUES (?,?,?,?,?,?)`,
       )
       .run(
         checkpoint.treeSize,
@@ -239,6 +250,7 @@ export class SqliteEvidenceStore implements EvidenceStore {
         checkpoint.createdAt,
         checkpoint.signature,
         checkpoint.publicKey,
+        checkpoint.keyId ?? null,
       );
     return Promise.resolve({ id: Number(info.lastInsertRowid), ...checkpoint });
   }

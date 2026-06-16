@@ -6,6 +6,12 @@
 -- cannot UPDATE or DELETE evidence, so even a compromised application credential
 -- cannot rewrite history.
 --
+-- Retention: there is no deletion path by design — append-only means evidence is
+-- kept indefinitely, which already satisfies the 5-year SAR/CTR recordkeeping
+-- floor. Meeting a real retention SLA is an operational concern (durable storage
+-- + backup/recovery; optionally PARTITION evidence_record by recorded_at for very
+-- large logs). It does not change the append-only contract above.
+--
 -- Usage:
 --   1. Let the gateway connect once as the owner to create the tables/triggers
 --      (it does this automatically on first start).

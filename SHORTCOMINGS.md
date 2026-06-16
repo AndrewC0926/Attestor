@@ -42,9 +42,25 @@ is a known, intentional limitation — not a bug.
   simplicity; running under a non-owner role that physically cannot
   `UPDATE`/`DELETE` requires applying `deploy/postgres-grants.sql` (documented,
   not automated in Phase 1).
-- **Signing key custody is basic.** The Ed25519 key is generated to a local file
-  (mode 0600) or supplied via `ATTESTOR_SIGNING_KEY`. There is no HSM/KMS
-  integration, no key rotation, and no checkpoint co-signing/witnessing yet.
+- **Signing key custody: pluggable, HSM-ready.** Signing goes through a `Signer`
+  seam (`packages/spine/src/signer.ts`). The default `LocalKeySigner` is the
+  unchanged Ed25519 local-key path (file mode 0600, or `ATTESTOR_SIGNING_KEY`).
+  `Pkcs11Signer` keeps the Ed25519 private key inside an HSM (PKCS#11; the key
+  never leaves the token) and is verifier-compatible — no signature-format
+  change. **Key rotation** is supported: each checkpoint records an optional
+  `keyId` and embeds its own public key, so new checkpoints sign with the
+  current key while historical checkpoints stay verifiable against the key that
+  signed them (the `keyId` is metadata, never part of the signed bytes).
+  - *Cloud KMS (AWS/GCP) follow-up:* those KMSes do not offer Ed25519 (only
+    ECDSA/RSA), so a cloud-KMS signer would require an additive `algorithm`
+    field and an algorithm-aware verifier — a deliberate change to the verify
+    path, deferred until a customer needs it. PKCS#11 HSMs were implemented
+    first precisely because they preserve the format and the verifier.
+  - *Forward-security path:* Ed25519 is not forward-secure on its own, but
+    rewriting PAST evidence is already prevented by the external RFC 3161
+    anchoring (a compromised key cannot forge a past TSA timestamp over an old
+    Merkle root). Rotation bounds the blast radius going forward; independent
+    co-signing/witnessing of checkpoints is the documented next step.
 - **No consistency proofs.** Verification uses record-chain re-derivation plus
   inclusion proofs and signed checkpoint roots. RFC 6962 *consistency* proofs
   between checkpoints are not implemented; a full verify is O(n).
