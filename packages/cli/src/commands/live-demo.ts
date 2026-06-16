@@ -169,7 +169,12 @@ async function anchorAndVerify(
   } else {
     console.log(`  ⚠️  TSA unreachable (${receipt.error}); checkpoint queued as a flagged gap.`);
   }
-  const bundle = exportBundle({ records, checkpoints, anchors: store.all() });
+  const bundle = exportBundle({
+    records,
+    checkpoints,
+    anchors: store.all(),
+    tsaCertsPem: service.trustedCertsPem(),
+  });
   writeBundle(BUNDLE_PATH, bundle);
   console.log(`  Exported portable bundle: ${BUNDLE_PATH}`);
   const inclusionSeq = Math.max(1, Math.ceil(records.length / 2));

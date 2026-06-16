@@ -272,6 +272,19 @@ Design notes:
   a restricted environment the offline tests cover the full path with a
   self-signed test TSA, and the live integration test runs with
   `ATTESTOR_LIVE_TSA=1`.
+- **Production TSA (pluggable + redundant).** `freetsa.org` is the dev/default
+  (no SLA, no legal standing). For production, configure a qualified/commercial
+  RFC 3161 TSP: `TsaConfig` takes optional auth `headers` (API-key / Bearer /
+  Basic) and a `certsPem` chain (bundled into exports for offline verification).
+  `AnchorService` accepts a **primary + ordered fallbacks** and tries them in
+  order — anchoring doesn't fail because one TSA is down, and a TSA response is
+  only accepted when its token self-verifies against the checkpoint root; if all
+  TSAs fail, the checkpoint stays queued (never lost) for retry. `service.lag()`
+  surfaces anchor lag (pending/failed counts, oldest unanchored age) for
+  monitoring. `DIGICERT_TSA` / `SECTIGO_TSA` are documented starting points —
+  confirm the current endpoint + credentials with the provider before relying on
+  them. The RFC 3161 token verification logic is unchanged (it already derives
+  the digest algorithm + signature scheme from the token itself).
 
 ## Where the code lives
 
